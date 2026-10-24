@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Gateway: MQTT -> Azure IoT Hub.
-
-Prenumererar på telemetri från ESP32-enheterna via lokal Mosquitto
-och skickar vidare varje meddelande till Azure IoT Hub.
-"""
+"""Gateway: MQTT -> Azure IoT Hub."""
 
 import json
 import os
 import signal
 import sys
+import time
 
 import paho.mqtt.client as mqtt
 from azure.iot.device import IoTHubDeviceClient, Message
-from azure.iot.device.exceptions import IoTHubDeviceClientError
+from azure.iot.device.exceptions import ClientError
 
-# ---------- Konfiguration via miljövariabler ----------
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "")
@@ -27,42 +23,34 @@ MQTT_TOPICS = [
 
 AZURE_CONNECTION_STRING = os.getenv("AZURE_IOT_CONNECTION_STRING", "")
 
-# ---------- Globala klienter ----------
-azure_client: IoTHubDeviceClient | None = None
+azure_client = None
 running = True
 
-
-# ---------- Azure-hjälp ----------
-def azure_connect() -> IoTHubDeviceClient:
-    """Skapa och anslut Azure-klienten (V3 kräver explicit connect)."""
+def azure_connect():
     client = IoTHubDeviceClient.create_from_connection_string(
         AZURE_CONNECTION_STRING
     )
-    client.connect()
     print("Ansluten till Azure IoT Hub.")
     return client
 
-
-def azure_send(payload: str) -> None:
-    """Skicka ett JSON-meddelande till Azure, återanslut vid behov."""
+def azure_send(payload):
     global azure_client
     if azure_client is None:
         azure_client = azure_connect()
 
     try:
         azure_client.send_message(Message(payload))
-    except IoTHubDeviceClientError as e:
+    except ClientError as e:
         print(f"Azure-sändning misslyckades: {e}. Försöker återansluta...")
         try:
             azure_client.shutdown()
         except Exception:
             pass
+        time.sleep(2)
         azure_client = azure_connect()
         azure_client.send_message(Message(payload))
 
-
-# ---------- MQTT-callbacks ----------
-def on_mqtt_connect(client, userdata, flags, rc, properties=None):
+def on_mqtt_connect(client, userdata, flags, rc):
     if rc != 0:
         print(f"MQTT-anslutning misslyckades: rc={rc}")
         return
@@ -70,7 +58,6 @@ def on_mqtt_connect(client, userdata, flags, rc, properties=None):
     for topic in MQTT_TOPICS:
         client.subscribe(topic)
         print(f"Prenumererar på {topic}")
-
 
 def on_mqtt_message(client, userdata, msg):
     try:
@@ -92,15 +79,12 @@ def on_mqtt_message(client, userdata, msg):
     except Exception as e:
         print(f"Kunde inte skicka till Azure: {e}")
 
-
-# ---------- Huvudloop ----------
 def shutdown_handler(signum, frame):
     global running
     print("\nAvslutar gatewayen...")
     running = False
 
-
-def main() -> int:
+def main():
     global azure_client
 
     if not AZURE_CONNECTION_STRING:
@@ -116,10 +100,7 @@ def main() -> int:
         print(f"Kunde inte ansluta till Azure: {e}")
         return 1
 
-    mqtt_client = mqtt.Client(
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        client_id="rpi-gateway",
-    )
+    mqtt_client = mqtt.Client(client_id="rpi-gateway")
     if MQTT_USER:
         mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
 
@@ -145,7 +126,6 @@ def main() -> int:
         print("Gatewayen stoppad.")
 
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

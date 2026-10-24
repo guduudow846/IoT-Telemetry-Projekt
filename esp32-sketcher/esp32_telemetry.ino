@@ -5,8 +5,8 @@
 #include <DHT.h>
 
 // ================= WIFI =================
-const char* WIFI_SSID = "iPhone";
-const char* WIFI_PASSWORD = "Hassan10";
+const char* WIFI_SSID = "MittHemmanatverk";
+const char* WIFI_PASSWORD = "MittLosenord123";
 
 // ================ MQTT ==================
 // Ange Raspberry Pi:ns IP-adress.
